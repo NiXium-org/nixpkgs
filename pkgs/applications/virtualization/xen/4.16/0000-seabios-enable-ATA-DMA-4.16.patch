@@ -1,3 +1,5 @@
+Small patch to enable ATA DMA by default on SeaBIOS.
+
 diff -uNr a/src/Kconfig b/src/Kconfig
 --- a/src/Kconfig	2015-08-31 10:15:13.231134858 +0200
 +++ b/src/Kconfig	2015-08-31 10:14:24.039180178 +0200
