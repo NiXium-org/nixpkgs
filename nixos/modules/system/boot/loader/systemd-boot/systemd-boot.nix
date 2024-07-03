@@ -56,6 +56,8 @@ let
 
     netbootxyz = optionalString cfg.netbootxyz.enable pkgs.netbootxyz-efi;
 
+    xen = if (config.virtualisation.xen.enable && config.virtualisation.xen.efi.enable) then "1" else "0";
+
     checkMountpoints = pkgs.writeShellScript "check-mountpoints" ''
       fail() {
         echo "$1 = '$2' is not a mounted partition. Is the path configured correctly?" >&2

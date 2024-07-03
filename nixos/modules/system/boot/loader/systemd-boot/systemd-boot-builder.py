@@ -32,6 +32,7 @@ CAN_TOUCH_EFI_VARIABLES = "@canTouchEfiVariables@"
 GRACEFUL = "@graceful@"
 COPY_EXTRA_FILES = "@copyExtraFiles@"
 CHECK_MOUNTPOINTS = "@checkMountpoints@"
+XEN_EFI = "@xen@"
 
 @dataclass
 class BootSpec:
@@ -101,7 +102,10 @@ def write_loader_conf(profile: str | None, generation: int, specialisation: str 
     with open(f"{LOADER_CONF}.tmp", 'w') as f:
         if TIMEOUT != "":
             f.write(f"timeout {TIMEOUT}\n")
-        f.write("default %s\n" % generation_conf_filename(profile, generation, specialisation))
+        if XEN_EFI == "1":
+            f.write("default xen.conf\n")
+        else:
+            f.write("default %s\n" % generation_conf_filename(profile, generation, specialisation))
         if not EDITOR:
             f.write("editor 0\n")
         f.write(f"console-mode {CONSOLE_MODE}\n")
@@ -264,6 +268,38 @@ def get_profiles() -> list[str]:
     else:
         return []
 
+def patch_xen_cfg() -> None:
+    gens = get_generations()
+    latest_generation = -1
+    latest_bootspec = None
+
+    rex_profile = re.compile(r"^" + re.escape(BOOT_MOUNT_POINT) + "/loader/entries/nixos-(.*)-generation-.*\.conf$")
+    rex_generation = re.compile(r"^" + re.escape(BOOT_MOUNT_POINT) + "/loader/entries/nixos.*-generation-([0-9]+)(-specialisation-.*)?\.conf$")
+
+    # Find the latest generation.
+    for path in glob.iglob(f"{BOOT_MOUNT_POINT}/loader/entries/nixos*-generation-[1-9]*.conf"):
+        if rex_profile.match(path):
+            prof = rex_profile.sub(r"\1", path)
+        else:
+            prof = None
+        try:
+            gen_number = int(rex_generation.sub(r"\1", path))
+        except ValueError:
+                continue
+        for gen in gens:
+            if (prof, gen_number, None) == (gen.profile, gen.generation, None):
+                if gen.generation > latest_generation:
+                    latest_generation = gen.generation
+                    latest_bootspec = get_bootspec(gen.profile, gen.generation)
+
+    # Patch xen.cfg, which is copied after extraFiles, to use the correct init path.
+    if latest_bootspec:
+        with open(f"{BOOT_MOUNT_POINT}{NIXOS_DIR}/xen.cfg", 'r') as xencfg:
+            xenpatched = xencfg.read()
+            xenpatched = xenpatched.replace('INIT_PATH', latest_bootspec.init)
+        with open(f"{BOOT_MOUNT_POINT}{NIXOS_DIR}/xen.cfg", 'w') as xencfg:
+            xencfg.write(xenpatched)
+
 def install_bootloader(args: argparse.Namespace) -> None:
     try:
         with open("/etc/machine-id") as machine_file:
@@ -395,6 +431,9 @@ def install_bootloader(args: argparse.Namespace) -> None:
     os.makedirs(f"{BOOT_MOUNT_POINT}/{NIXOS_DIR}/.extra-files", exist_ok=True)
 
     run([COPY_EXTRA_FILES])
+
+    if XEN_EFI == "1":
+        patch_xen_cfg()
 
 
 def main() -> None:
